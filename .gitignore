@@ -12,6 +12,9 @@ orchestrator/logs/
 shared_memory/STATE.md
 
 # build artifacts / data
+.venv/
+.uv-cache/
+
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/

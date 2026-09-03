@@ -21,7 +21,8 @@ happens in the Kaggle notebook, which clones the commit you push.
 
 ## The entrypoint contract - do not break this
 
-`src/run.py` is called by the Kaggle notebook as:
+`src/run.py` is called by the Kaggle notebook as (the kernel has no uv and no
+.venv - it runs the image's own interpreter, so `src/run.py` must not assume one):
 
 ```bash
 python -m src.run --exp <exp_id> --out /kaggle/working --data-root /kaggle/input [--config configs/<exp_id>.yaml]
@@ -51,7 +52,7 @@ a `dev_bug`, so you are here to fix a specific defect - not to start over.
 1. Read the failure `Reason` and `Details` in the prompt, then the newest
    `## Cycle` block in `shared_memory/RESULTS.md` for the full `### Run notes`.
 2. Pull the actual kernel log rather than guessing at the cause:
-   `python scripts/kaggle_run.py logs --exp <exp_id>`
+   `uv run python scripts/kaggle_run.py logs --exp <exp_id>`
 3. Fix **only** that defect. Do not change the primary variable, do not
    re-architect, do not "improve" anything else - the proposal is still live and
    a second change would confound the result it is trying to measure.
@@ -84,7 +85,7 @@ test that runs in under two minutes on a handful of synthetic or downsampled
 images:
 
 ```bash
-python -m src.run --exp <exp_id> --out .smoke --data-root <tiny fixture> --smoke
+uv run python -m src.run --exp <exp_id> --out .smoke --data-root <tiny fixture> --smoke
 ```
 
 The `--smoke` flag should cap to 1 epoch on a few samples. Then assert:
@@ -93,7 +94,7 @@ The `--smoke` flag should cap to 1 epoch on a few samples. Then assert:
   check this explicitly, an overlap makes the real submission ERROR and burns one
   of the 5 daily slots
 - `metrics.json` exists and contains a numeric `cv_pq`
-- `python -c "import src.run"` is clean, no import-time side effects
+- `uv run python -c "import src.run"` is clean, no import-time side effects
 
 Never push code whose smoke test you have not run. A broken push costs a full
 Kaggle kernel run (hours), not seconds.
@@ -104,7 +105,7 @@ Credentials come from this machine's `.env` (`GITHUB_TOKEN`) - resolve them via
 `scripts/env_setup.py`, never hardcode or echo the token:
 
 ```bash
-python -c "import sys;sys.path.insert(0,'scripts');from env_setup import github_remote;print(github_remote())"
+uv run python -c "import sys;sys.path.insert(0,'scripts');from env_setup import github_remote;print(github_remote())"
 ```
 
 Commit with a message naming the cycle and the primary variable:

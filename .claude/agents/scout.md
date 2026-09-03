@@ -17,7 +17,7 @@ Kaggle competition pages are SPA shells - `WebFetch` returns only a title. Use t
 API instead. Credentials come from this machine's `.env`; never hardcode a username.
 
 ```bash
-python - <<'PY'
+uv run python - <<'PY'
 import sys; sys.path.insert(0, 'scripts')
 from env_setup import kaggle_api
 api = kaggle_api()

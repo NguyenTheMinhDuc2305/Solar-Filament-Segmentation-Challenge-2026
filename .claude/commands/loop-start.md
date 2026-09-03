@@ -8,9 +8,9 @@ Start the competition loop. Arguments (optional, e.g. `--cycles 3`): $ARGUMENTS
 ## 1. Preflight - do not skip
 
 ```bash
-python scripts/env_setup.py                 # this machine's Kaggle identity + tokens
-python scripts/kaggle_run.py limits         # submission slots available today
-python orchestrator/run_loop.py --status    # existing state, if any
+uv run python scripts/env_setup.py                 # this machine's Kaggle identity + tokens
+uv run python scripts/kaggle_run.py limits         # submission slots available today
+uv run python orchestrator/run_loop.py --status    # existing state, if any
 git status --short && git log -1 --oneline  # repo is clean and pushed
 ```
 
@@ -30,7 +30,7 @@ away the cycle counter and scout timer but leaves `shared_memory/` intact.
 Run in the background so it survives this session:
 
 ```bash
-python orchestrator/run_loop.py
+uv run python orchestrator/run_loop.py
 ```
 
 Pass through anything in `$ARGUMENTS` (`--cycles N`, `--once`, `--stage <name>`).

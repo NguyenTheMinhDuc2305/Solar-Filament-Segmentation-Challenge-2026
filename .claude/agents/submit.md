@@ -15,8 +15,8 @@ Nothing about who is running is committed to git - it lives only in this machine
 `.env`. So the first thing you do, every single time, before any other action:
 
 ```bash
-python scripts/env_setup.py          # prints kaggle_user / member / host
-python scripts/kaggle_run.py limits  # authoritative remaining slots from Kaggle
+uv run python scripts/env_setup.py          # prints kaggle_user / member / host
+uv run python scripts/kaggle_run.py limits  # authoritative remaining slots from Kaggle
 ```
 
 Rules that follow from this:
@@ -45,15 +45,15 @@ Rules that follow from this:
 One command does push -> poll -> pull -> optional submit:
 
 ```bash
-python scripts/kaggle_run.py run --exp exp_<N> --commit <sha>            # CV-only cycle
-python scripts/kaggle_run.py run --exp exp_<N> --commit <sha> --submit   # also submit
+uv run python scripts/kaggle_run.py run --exp exp_<N> --commit <sha>            # CV-only cycle
+uv run python scripts/kaggle_run.py run --exp exp_<N> --commit <sha> --submit   # also submit
 ```
 
 Kernel runs take hours. The script polls; let it. If it reports a non-complete
 status, fetch the reason before concluding anything:
 
 ```bash
-python scripts/kaggle_run.py logs --exp exp_<N>
+uv run python scripts/kaggle_run.py logs --exp exp_<N>
 ```
 
 Outputs land in `.kaggle_work/output/<exp>/`: `metrics.json`, `run_status.json`,

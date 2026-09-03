@@ -9,8 +9,8 @@ not a review.
 ## Gather
 
 ```bash
-python orchestrator/run_loop.py --status
-python scripts/kaggle_run.py limits
+uv run python orchestrator/run_loop.py --status
+uv run python scripts/kaggle_run.py limits
 ls -t orchestrator/logs/cycle-*/ 2>/dev/null | head
 git log --oneline -5
 ```

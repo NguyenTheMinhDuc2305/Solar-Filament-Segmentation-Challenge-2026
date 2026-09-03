@@ -63,7 +63,7 @@ can be retried alone. All durable state is in `orchestrator/state.json`.
 | `/continue` | resume after a usage limit, crash, or manual stop |
 | `/loop-status` | where it is, how it is trending, whether it is healthy |
 
-Direct equivalents: `python orchestrator/run_loop.py [--resume] [--once] [--stage X] [--cycles N] [--status]`.
+Direct equivalents: `uv run python orchestrator/run_loop.py [--resume] [--once] [--stage X] [--cycles N] [--status]`.
 
 ## shared_memory/ is the team's shared record
 
@@ -85,11 +85,31 @@ Credentials live only in `.env` (gitignored). Nothing identifying is committed:
 runtime by `scripts/env_setup.py`.
 
 ```bash
-cp .env.example .env      # fill in KAGGLE_API_TOKEN and GITHUB_TOKEN
-python scripts/env_setup.py   # should print your Kaggle username
+uv sync                              # creates .venv on Python 3.11, from uv.lock
+cp .env.example .env                 # fill in KAGGLE_API_TOKEN and GITHUB_TOKEN
+uv run python scripts/env_setup.py   # should print your Kaggle username
 ```
 
 Kernel slugs are namespaced per member, so nobody collides.
+
+## The local environment is uv, and it mirrors Kaggle
+
+`pyproject.toml` pins **Python 3.11**, the version on Kaggle's GPU image, so a
+smoke test that passes locally fails for real reasons rather than interpreter
+drift. `uv.lock` is committed: every teammate resolves byte-identical versions.
+
+**Every local python call goes through `uv run python`.** A bare `python` here is
+the system 3.13 with a different, unpinned dependency set, and a number measured
+against it is not comparable to anything else in `RESULTS.md`.
+
+```bash
+uv sync                    # control plane: kaggle API, metric, data, postprocess
+uv sync --extra smoke      # adds CPU torch for the implement agent's smoke test
+```
+
+The Kaggle kernel is the deliberate exception: it has no uv and no `.venv`, runs
+the image's own interpreter, and installs from `requirements-kaggle.txt`. The two
+dependency sets stay separate on purpose - `src/run.py` must never assume uv.
 
 `GITHUB_TOKEN` is the **only** Kaggle Secret needed (`notebooks/README.md`): the notebook runs on Kaggle's
 machines and cannot see your `.env`, so it needs that token to clone this private

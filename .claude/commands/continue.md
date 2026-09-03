@@ -8,7 +8,7 @@ Resume the continuous competition loop. Arguments (optional): $ARGUMENTS
 ## 1. Find out where it stopped
 
 ```bash
-python orchestrator/run_loop.py --status
+uv run python orchestrator/run_loop.py --status
 ```
 
 Read `stage`, `status`, `blocked_reason` and the tail of `history`. Also check
@@ -33,14 +33,14 @@ re-running `implement` re-edits and re-pushes. The one stage to look at twice is
 `submit` - check whether it already spent a Kaggle slot before letting it re-run:
 
 ```bash
-python scripts/kaggle_run.py limits
+uv run python scripts/kaggle_run.py limits
 ```
 
 If `num_today` shows a submission already went out for this cycle, skip ahead
 instead of resubmitting:
 
 ```bash
-python orchestrator/run_loop.py --resume --stage review
+uv run python orchestrator/run_loop.py --resume --stage review
 ```
 
 ## 3. Verify this machine can actually run the loop
@@ -49,7 +49,7 @@ Credentials are per-machine and never committed. Confirm they resolve before
 starting a long run:
 
 ```bash
-python scripts/env_setup.py
+uv run python scripts/env_setup.py
 ```
 
 If it reports a missing token, stop and tell the user to fill in `.env` from
@@ -60,7 +60,7 @@ If it reports a missing token, stop and tell the user to fill in `.env` from
 Launch the loop in the background so it survives this Claude session ending:
 
 ```bash
-python orchestrator/run_loop.py --resume
+uv run python orchestrator/run_loop.py --resume
 ```
 
 If the user passed a stage name in `$ARGUMENTS`, add `--stage <name>`. If they
