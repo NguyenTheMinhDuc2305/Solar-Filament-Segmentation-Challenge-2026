@@ -27,4 +27,50 @@ _Maintained by the review agent each cycle._
 
 | cycle | exp | primary variable | CV PQ | LB | member | verdict |
 | --- | --- | --- | --- | --- | --- | --- |
-| _(no cycles yet)_ | | | | | | |
+| 0 | exp_0 | end-to-end pipeline | null | — | ngtmduc | inconclusive |
+
+## Cycle 0 - exp_0
+_Ran: 2026-09-03T16:25:00Z | member: ngtmduc | kaggle_user: ngtmduc | commit: incomplete_
+
+### Setup
+Primary variable: **a working end-to-end pipeline exists**.
+
+Config highlights:
+- Input size: 1024×1024
+- Encoder: ResNet-34 (ImageNet pretrained)
+- Training: 5-fold CV, 40 epochs, batch size 4, AdamW lr 3e-4 with cosine decay to 1e-6
+- Loss: 0.5×BCEWithLogits + 0.5×SoftDice
+- Post-processing: sigmoid → upsample to 2048 → threshold 0.5 → connected components → min area 200 px
+- Expected cost: 5–7 GPU hours on Kaggle P100/T4
+
+Kernel URL: _not queued (implementation incomplete)_
+GPU hours: 0 (run did not execute)
+
+### Metrics
+| metric | value | vs cycle 0 | vs anchor |
+| --- | --- | --- | --- |
+| CV PQ | null | — | ceiling 0.341 / classical 0.095 |
+| detection recall | null | — | — |
+| mean matched IoU | null | — | 0.634 human |
+| one-to-many rate | null | — | — |
+| n_folds_completed | 0 | — | target 5 |
+
+### Submission
+**Slot not spent.** No submission attempted because the kernel did not run.
+
+### Run notes
+**BLOCKED: Implementation incomplete. Required files missing.**
+
+The implement agent created a partial implementation with four of eight required modules:
+- ✓ `src/metric.py` — Panoptic Quality scorer, ported from organizer's notebook
+- ✓ `src/data.py` — COCO data loader, RLE cache layer
+- ✓ `src/model.py` — ResNet-34 U-Net builder
+- ✓ `src/postprocess.py` — connected-components post-processor
+- **✗ `src/train.py`** — training loop
+- **✗ `src/infer.py`** — inference and OOF prediction
+- **✗ `src/run.py`** — notebook entrypoint (required by `runner_template.py`)
+- **✗ `configs/exp_0.yaml`** — hyperparameter manifest
+
+Without `src/run.py` and the config, the kernel runner cannot queue work on Kaggle. The partial implementation exists in local `src/` but has not been pushed to `origin/main`.
+
+**Verdict: inconclusive.** The pipeline did not run; this is a code completeness issue (dev_bug), not a model or metric problem.

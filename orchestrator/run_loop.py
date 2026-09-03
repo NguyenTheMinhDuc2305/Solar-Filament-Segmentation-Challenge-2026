@@ -165,11 +165,67 @@ def submit_slots_left(st, cfg):
 
 
 # ----------------------------------------------------------------- claude shell
+_CLAUDE_BIN = None
+
+
 def claude_bin():
-    exe = shutil.which("claude") or shutil.which("claude.cmd")
-    if not exe:
+    """Resolve the real Claude executable, never the npm .CMD shim.
+
+    On Windows `shutil.which("claude")` returns `claude.CMD`, a cmd.exe batch
+    wrapper that forwards `%*` to the native binary. Routing through cmd.exe
+    mangles the argument vector, and flags that follow a long or multi-line
+    argument are silently dropped - so `--agent` and `--output-format stream-json`
+    never reach the CLI. The stage then runs as a plain assistant emitting plain
+    text, which looks like an agent misbehaving rather than a launcher bug.
+
+    Measured on this machine, same prompt, same flags:
+        via claude.CMD -> 0 stream-json lines, plain text, flags lost
+        via claude.exe -> 10 stream-json lines, flags honoured
+
+    So: find the binary the shim points at and exec it directly.
+    """
+    global _CLAUDE_BIN
+    if _CLAUDE_BIN:
+        return _CLAUDE_BIN
+
+    found = shutil.which("claude")
+    if not found:
         sys.exit("FATAL: `claude` CLI not found on PATH.")
-    return exe
+
+    path = Path(found)
+    if path.suffix.lower() not in (".cmd", ".bat"):
+        _CLAUDE_BIN = str(path)          # already a real executable
+        return _CLAUDE_BIN
+
+    for cand in _shim_targets(path):
+        if cand.is_file():
+            log("resolved claude shim {} -> {}".format(path.name, cand))
+            _CLAUDE_BIN = str(cand)
+            return _CLAUDE_BIN
+
+    log("WARNING: could not resolve a native binary behind {}; falling back to the "
+        "shim. Flags after a multi-line argument may be dropped by cmd.exe."
+        .format(path))
+    _CLAUDE_BIN = str(path)
+    return _CLAUDE_BIN
+
+
+def _shim_targets(shim: Path):
+    """Candidate real binaries behind an npm .CMD wrapper, best guess first."""
+    # The shim names its own target, e.g.
+    #   "%dp0%\node_modules\@anthropic-ai\claude-code\bin\claude.exe"  %*
+    try:
+        text = shim.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
+    for m in re.finditer(r'"%(?:dp0|~dp0)%\\?([^"]+)"', text):
+        cand = (shim.parent / m.group(1).lstrip("\\/")).resolve()
+        # Only a directly executable binary. A .js entrypoint would need `node`
+        # prepended, which would put us back in launcher-guessing territory.
+        if cand.suffix.lower() in (".exe", ""):
+            yield cand
+    # Known npm layout, in case the shim format changes.
+    yield shim.parent / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
 
 
 def build_prompt(stage, st, cfg):
@@ -245,9 +301,14 @@ def run_stage(stage, st, cfg, dry_run=False):
     cycle_log_dir.mkdir(parents=True, exist_ok=True)
     log_path = cycle_log_dir / (stage + ".jsonl")
 
+    # The prompt goes in on stdin, never as an argv element: on Windows
+    # `shutil.which` resolves to claude.CMD, and a multi-line -p argument through
+    # that cmd.exe wrapper breaks the command line - the flags after it are lost
+    # (so --agent and --output-format silently stop applying) or the call hangs.
+    prompt = build_prompt(stage, st, cfg)
     cmd = [
         claude_bin(),
-        "-p", build_prompt(stage, st, cfg),
+        "-p",
         "--agent", stage,
         "--model", acfg["model"],
         "--effort", acfg.get("effort", "medium"),
@@ -285,8 +346,9 @@ def run_stage(stage, st, cfg, dry_run=False):
     try:
         proc = subprocess.Popen(
             cmd, cwd=str(ROOT),
-            # DEVNULL, not inherit: `claude -p` otherwise waits 3s for stdin per stage.
-            stdin=subprocess.DEVNULL,
+            # The prompt is written to stdin below, then stdin is closed so the
+            # CLI does not sit waiting for more input.
+            stdin=subprocess.PIPE,
             # stderr merged in on purpose - usage-limit notices arrive on stderr and
             # the detector below needs to see them. Non-JSON lines are skipped.
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -294,6 +356,13 @@ def run_stage(stage, st, cfg, dry_run=False):
         )
     except OSError as e:
         return "failed", "could not launch claude: {}".format(e)
+
+    try:
+        proc.stdin.write(prompt)
+        proc.stdin.close()
+    except OSError as e:
+        proc.kill()
+        return "failed", "could not send the prompt to claude: {}".format(e)
 
     timeout = cfg["loop"]["stage_timeout_seconds"]
     timed_out = False
