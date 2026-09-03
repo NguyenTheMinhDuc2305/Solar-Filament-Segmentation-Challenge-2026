@@ -34,7 +34,7 @@ STAGE_ORDER = ["research", "implement", "submit", "review"]
 CONTRACTS = {
     "scout": ("COMPETITION.md", ["## Snapshot", "## Findings", "## Actionable"]),
     "research": ("PROPOSAL.md", ["## Hypothesis", "## Changes", "## Success criteria"]),
-    "implement": (None, []),
+    "implement": (None, []),   # verified structurally in check_contract
     "submit": ("RESULTS.md", ["## Cycle"]),
     "review": ("RESULTS.md", ["### Insight"]),
 }
@@ -50,9 +50,16 @@ USAGE_LIMIT_PATTERNS = [
     r"exceeded your.{0,30}quota",
     r"insufficient credit",
     r"credit balance is too low",
+    # The CLI says "You've hit your session limit - resets 7:20pm (Asia/Bangkok)".
+    # Without this the loop reads a quota block as a code failure and burns all
+    # three retries in seconds instead of parking with the reset time. Kept
+    # narrow on purpose: `blob` includes the agents' own text, and a bare
+    # "session limit" would let an agent discussing submission caps park the loop.
+    r"hit your .{0,30}limit",
 ]
+# "at" is optional: the CLI writes "resets 7:20pm (Asia/Bangkok)" with no "at".
 RESET_TIME_PATTERN = re.compile(
-    r"reset(?:s|ting)?\s+at\s+([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm)?[^\n.]*)", re.I
+    r"reset(?:s|ting)?\s+(?:at\s+)?([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm)?[^\n.]*)", re.I
 )
 
 
@@ -267,6 +274,7 @@ def run_stage(stage, st, cfg, dry_run=False):
         stage, st["cycle"], acfg["model"], acfg.get("effort")))
     started = time.time()
     tail = []
+    plain_tail = []
     result_text = ""
     is_error = False
 
@@ -299,6 +307,12 @@ def run_stage(stage, st, cfg, dry_run=False):
                 evt = json.loads(line)
             except json.JSONDecodeError:
                 evt = None
+                # Non-JSON lines are the CLI's own notices (stderr is merged in).
+                # The quota check reads only these, never the agent's stream-json,
+                # so an agent quoting a limit message cannot park the loop.
+                plain_tail.append(line)
+                if len(plain_tail) > 200:
+                    plain_tail.pop(0)
             if isinstance(evt, dict):
                 et = evt.get("type")
                 if et == "assistant":
@@ -319,15 +333,16 @@ def run_stage(stage, st, cfg, dry_run=False):
     if timed_out:
         return "failed", "stage exceeded timeout of {}s".format(timeout)
 
-    raw = "".join(tail) + "\n" + result_text
-    blob = raw.lower()
-    for pat in USAGE_LIMIT_PATTERNS:
-        if re.search(pat, blob):
-            m = RESET_TIME_PATTERN.search(raw)
-            suffix = " (resets {})".format(m.group(1).strip()) if m else ""
-            return "blocked", "usage limit hit" + suffix
-
+    # A real quota block always fails the process, so the text is only consulted
+    # on a failed run. A stage that exits 0 has done its job, whatever it wrote.
     if proc.returncode != 0 or is_error:
+        raw = "".join(plain_tail) + chr(10) + result_text
+        blob = raw.lower()
+        for pat in USAGE_LIMIT_PATTERNS:
+            if re.search(pat, blob):
+                m = RESET_TIME_PATTERN.search(raw)
+                suffix = " (resets {})".format(m.group(1).strip()) if m else ""
+                return "blocked", "usage limit hit" + suffix
         return "failed", "exit={} is_error={} :: {}".format(
             proc.returncode, is_error, result_text[:400])
 
@@ -349,6 +364,14 @@ def check_contract(stage):
         missing = [s for s in sections if s not in text]
         if missing:
             return False, "{} missing sections: {}".format(fname, missing)
+    if stage == "implement":
+        # Without this a no-op run passes as success and submit burns a Kaggle
+        # kernel on a commit that has no pipeline code in it.
+        entry = ROOT / "src" / "run.py"
+        if not entry.exists():
+            return False, ("src/run.py does not exist - the stage reported success "
+                           "without leaving an entrypoint the Kaggle notebook can call")
+
     if stage == "submit":
         _, ok, why = read_handoff()
         if not ok:
