@@ -38,28 +38,33 @@
       "min_cv_delta": 0.002,
       "always_submit_first_n_cycles": 1,
       "reserve_daily_slots": 1
+    },
+    "repair": {
+      "max_repair_attempts": 3,
+      "max_replans_per_cycle": 2,
+      "_note": "A failed run routes on the submit agent's classification in orchestrator/handoff.json: dev_bug goes back to implement (same proposal), logic_error goes back to research (new proposal). Exhausting both parks the loop for a human."
     }
   },
   "agents": {
     "scout": {
-      "model": "sonnet",
-      "effort": "medium"
+      "model": "opus",
+      "effort": "max"
     },
     "research": {
       "model": "opus",
-      "effort": "high"
+      "effort": "max"
     },
     "implement": {
       "model": "sonnet",
       "effort": "high"
     },
     "submit": {
-      "model": "sonnet",
+      "model": "haiku",
       "effort": "medium"
     },
     "review": {
       "model": "opus",
-      "effort": "high"
+      "effort": "max"
     }
   },
   "claude": {

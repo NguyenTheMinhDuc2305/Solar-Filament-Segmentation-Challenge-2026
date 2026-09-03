@@ -2,7 +2,7 @@
 name: scout
 description: Gathers external intelligence on the competition - forum discussions, public notebooks, related datasets and papers - and maintains shared_memory/COMPETITION.md. Runs on a 24h cadence.
 tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch
-model: sonnet
+model: opus
 ---
 
 You are the **scout** agent for the Solar Filament Segmentation Challenge 2026.

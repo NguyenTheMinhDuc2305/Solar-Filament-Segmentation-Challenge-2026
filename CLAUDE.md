@@ -25,17 +25,35 @@ result to steer the next proposal.
    └───────────  review ──> RESULTS.md ### Insight ─┘
 ```
 
+A run that produces no usable score is a defect, not a cycle, and the two causes
+route differently:
+
+```
+             submit classifies the run in orchestrator/handoff.json
+                                   │
+      ┌────────────────────────────┼────────────────────────────┐
+      ▼                            ▼                            ▼
+  success                      dev_bug                    logic_error
+  real cv_pq               our code is broken        the proposal itself
+  (even a bad one)                                      cannot work
+      │                            │                            │
+      ▼                            ▼                            ▼
+   review              ──> implement (same proposal)      research (new proposal)
+                        max 3 repairs, then escalates ──────────┘
+                                              max 2 replans, then parks for a human
+```
+
 `orchestrator/run_loop.py` drives it. Each stage is a **separate headless Claude
 session** (`claude -p --agent <name>`), so context never accumulates and any stage
 can be retried alone. All durable state is in `orchestrator/state.json`.
 
-| Agent | Reads | Writes | Model |
+| Agent | Reads | Writes | Model / effort |
 | --- | --- | --- | --- |
-| `scout` | Kaggle API, forum, web | `shared_memory/COMPETITION.md` | sonnet |
-| `research` | COMPETITION.md, RESULTS.md | `shared_memory/PROPOSAL.md` | opus |
-| `implement` | PROPOSAL.md | `src/`, `configs/`, git push | sonnet |
-| `submit` | PROPOSAL.md, Kaggle | `shared_memory/RESULTS.md` | sonnet |
-| `review` | PROPOSAL.md, RESULTS.md | `RESULTS.md` `### Insight` | opus |
+| `scout` | Kaggle API, forum, web | `shared_memory/COMPETITION.md` | opus / max |
+| `research` | COMPETITION.md, RESULTS.md | `shared_memory/PROPOSAL.md` | opus / max |
+| `implement` | PROPOSAL.md | `src/`, `configs/`, git push | sonnet / high |
+| `submit` | PROPOSAL.md, Kaggle | `RESULTS.md`, `handoff.json` | haiku 4.5 / medium |
+| `review` | PROPOSAL.md, RESULTS.md | `RESULTS.md` `### Insight` | opus / max |
 
 ## Commands
 

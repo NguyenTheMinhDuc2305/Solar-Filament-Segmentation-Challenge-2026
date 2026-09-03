@@ -43,6 +43,26 @@ into `cv_pq`. If you cannot compute a real OOF score, write `"cv_pq": null` and 
 It must also honour `configs/artifact_input.json` when present (written by the
 notebook) to warm-start from the previous cycle's weights.
 
+## If your prompt says `--- THIS IS A RETRY ---`
+
+A previous run of this same proposal failed and the submit agent classified it as
+a `dev_bug`, so you are here to fix a specific defect - not to start over.
+
+1. Read the failure `Reason` and `Details` in the prompt, then the newest
+   `## Cycle` block in `shared_memory/RESULTS.md` for the full `### Run notes`.
+2. Pull the actual kernel log rather than guessing at the cause:
+   `python scripts/kaggle_run.py logs --exp <exp_id>`
+3. Fix **only** that defect. Do not change the primary variable, do not
+   re-architect, do not "improve" anything else - the proposal is still live and
+   a second change would confound the result it is trying to measure.
+4. Reproduce the failure in the smoke test first if you can. A repair you cannot
+   demonstrate locally is a guess, and each guess costs another Kaggle run.
+5. If you conclude the defect is not in the code but in the proposal itself -
+   it asks for data that does not exist, or is internally contradictory - say so
+   plainly in `## Implementation notes` in `PROPOSAL.md` and exit non-zero. The
+   loop escalates to a new proposal after repeated failed repairs; do not quietly
+   substitute a different idea to make the run pass.
+
 ## Working rules
 
 - **Implement the proposal, not your own better idea.** If the proposal is wrong

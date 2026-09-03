@@ -24,6 +24,7 @@ Match what you find to one of these:
 | --- | --- | --- |
 | `usage limit` | Claude quota exhausted mid-stage | Confirm the limit has actually reset, then resume. Resuming too early just re-blocks. |
 | `3 consecutive failures` | The same stage failed three times | **Do not blindly resume.** Read that stage's log, find the real error, fix it, then resume. |
+| `repair loop exhausted` | implement<->submit could not produce a scoring run, and re-planning did not help either | **Needs you.** Read the last `## Cycle` block in `RESULTS.md` and the failure in `state.json` -> `last_failure`. Decide whether the proposal or the code is at fault, fix it by hand, then resume with `--stage implement` or `--stage research`. Resuming unchanged just replays the same failure. |
 | `null` with status `running` | The process was killed (reboot, Ctrl-C) | Safe to resume - the stage re-runs from the start. |
 | `null` with status `pending` | Clean stop | Safe to resume. |
 
@@ -64,6 +65,11 @@ python orchestrator/run_loop.py --resume
 
 If the user passed a stage name in `$ARGUMENTS`, add `--stage <name>`. If they
 asked for a single step, add `--once`.
+
+`--resume` also clears `repair_attempts` and `replan_attempts`, so a loop parked
+by an exhausted repair cycle gets a full budget again. That is the right
+behaviour only if you actually fixed something - otherwise it will burn the same
+budget on the same failure.
 
 ## 5. Report back
 

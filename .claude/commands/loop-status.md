@@ -26,6 +26,8 @@ Also read the `## Summary` table in `shared_memory/RESULTS.md` and the newest
 3. **Budget**: submission slots left today, days to the 2026-11-15 deadline.
 4. **Health**: flag any of these if true -
    - three or more consecutive `inconclusive` verdicts (the loop is spinning)
+   - `repair_attempts` or `replan_attempts` above zero (the current cycle is
+     fighting a defect rather than testing an idea) - say which and why
    - CV flat for three or more cycles
    - the scout has not run in over 48h
    - the 4-page report / public repo still not started with under 21 days left

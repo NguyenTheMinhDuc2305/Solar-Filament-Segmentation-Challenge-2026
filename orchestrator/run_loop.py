@@ -39,6 +39,10 @@ CONTRACTS = {
     "review": ("RESULTS.md", ["### Insight"]),
 }
 
+# The submit agent classifies every run here; the orchestrator routes on it.
+HANDOFF_PATH = ORCH / "handoff.json"
+VALID_OUTCOMES = {"success", "dev_bug", "logic_error"}
+
 USAGE_LIMIT_PATTERNS = [
     r"usage limit reached",
     r"claude usage limit",
@@ -82,6 +86,9 @@ DEFAULT_STATE = {
     "resume_after": None,
     "last_scout_at": None,
     "consecutive_failures": 0,
+    "repair_attempts": 0,         # implement<->submit fix rounds in this cycle
+    "replan_attempts": 0,         # research re-plans triggered by a logic error
+    "last_failure": None,         # {"outcome","reason","exp","stage"} for the retry prompt
     "submissions": [],            # [{"at": iso, "cycle": n, "lb": float|None}]
     "best": {"cycle": None, "cv": None, "lb": None},
     "history": [],
@@ -112,6 +119,8 @@ def _mirror_state_markdown(st):
         "- **Stage**: `{}`".format(st["stage"]),
         "- **Status**: `{}`".format(st["status"]),
         "- **Blocked reason**: {}".format(st.get("blocked_reason") or "-"),
+        "- **Repair attempts (this cycle)**: {}".format(st.get("repair_attempts", 0)),
+        "- **Replans (this cycle)**: {}".format(st.get("replan_attempts", 0)),
         "- **Last scout**: {}".format(st.get("last_scout_at") or "never"),
         "- **Submissions in last 24h**: {}".format(submissions_today(st)),
         "- **Best so far**: cycle {} | CV {} | LB {}".format(
@@ -190,6 +199,35 @@ def build_prompt(stage, st, cfg):
             "then append this cycle's ### Insight section."
         ),
     }[stage]
+
+    # A bounced run must tell the next stage exactly what it is fixing, or the
+    # retry just reproduces the same failure.
+    fail = st.get("last_failure")
+    if fail and stage in ("implement", "research"):
+        rcfg = cfg["loop"].get("repair", {})
+        extra += (
+            "\n\n--- THIS IS A RETRY ---\n"
+            "The previous run of this proposal produced no usable score.\n"
+            "The submit agent classified it as: {}\n"
+            "Reason: {}\n".format(fail.get("outcome"), fail.get("reason"))
+        )
+        if fail.get("details"):
+            extra += "Details: {}\n".format(fail["details"])
+        if stage == "implement":
+            extra += (
+                "Repair attempt {} of {}. Fix that specific defect: do not restart the "
+                "proposal, do not change the primary variable, and re-run the smoke test "
+                "before pushing. The failing run is recorded in the newest cycle block of "
+                "shared_memory/RESULTS.md.".format(
+                    st.get("repair_attempts", 0), rcfg.get("max_repair_attempts", 3))
+            )
+        else:
+            extra += (
+                "Replan {} of {}. The code was implemented as written and the idea itself "
+                "did not survive contact with the data, so propose something different. "
+                "State explicitly in ## Rationale what the previous attempt ruled out.".format(
+                    st.get("replan_attempts", 0), rcfg.get("max_replans_per_cycle", 2))
+            )
     return common + "\n" + extra
 
 
@@ -212,7 +250,17 @@ def run_stage(stage, st, cfg, dry_run=False):
     ] + list(cfg["claude"].get("extra_args", []))
 
     if dry_run:
-        log("DRY-RUN stage={} model={} -> {}".format(stage, acfg["model"], log_path))
+        log("DRY-RUN stage={} model={} effort={} -> {}".format(
+            stage, acfg["model"], acfg.get("effort"), log_path))
+        if stage == "submit":
+            # stand in for the agent's verdict so routing is exercised end to end;
+            # override with DRY_RUN_OUTCOME=dev_bug|logic_error to test the repair paths
+            outcome = os.environ.get("DRY_RUN_OUTCOME", "success")
+            HANDOFF_PATH.write_text(json.dumps({
+                "outcome": outcome,
+                "reason": "" if outcome == "success" else "dry-run simulated " + outcome,
+                "exp": "exp_{:04d}".format(st["cycle"]),
+            }, indent=2), encoding="utf-8")
         return "done", "dry-run"
 
     log("--> stage={} cycle={} model={} effort={}".format(
@@ -293,16 +341,43 @@ def run_stage(stage, st, cfg, dry_run=False):
 
 def check_contract(stage):
     fname, sections = CONTRACTS.get(stage, (None, []))
-    if not fname:
-        return True, ""
-    path = SHARED / fname
-    if not path.exists():
-        return False, "{} was not created".format(fname)
-    text = path.read_text(encoding="utf-8", errors="replace")
-    missing = [s for s in sections if s not in text]
-    if missing:
-        return False, "{} missing sections: {}".format(fname, missing)
+    if fname:
+        path = SHARED / fname
+        if not path.exists():
+            return False, "{} was not created".format(fname)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        missing = [s for s in sections if s not in text]
+        if missing:
+            return False, "{} missing sections: {}".format(fname, missing)
+    if stage == "submit":
+        _, ok, why = read_handoff()
+        if not ok:
+            return False, why
     return True, ""
+
+
+def read_handoff():
+    """(handoff dict, valid?, why-not) - the submit agent's verdict on the run."""
+    if not HANDOFF_PATH.exists():
+        return {}, False, ("orchestrator/handoff.json was not written; the submit agent "
+                           "must classify every run as success / dev_bug / logic_error")
+    try:
+        h = json.loads(HANDOFF_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return {}, False, "handoff.json is not valid JSON: {}".format(e)
+    outcome = h.get("outcome")
+    if outcome not in VALID_OUTCOMES:
+        return h, False, "handoff.json outcome {!r} not one of {}".format(
+            outcome, sorted(VALID_OUTCOMES))
+    if outcome != "success" and not str(h.get("reason", "")).strip():
+        return h, False, "handoff.json outcome {!r} needs a non-empty reason".format(outcome)
+    return h, True, ""
+
+
+def clear_handoff():
+    """Consume the verdict so a stale file can never route the next run."""
+    if HANDOFF_PATH.exists():
+        HANDOFF_PATH.unlink()
 
 
 # ----------------------------------------------------------------------- driver
@@ -327,9 +402,79 @@ def advance(st):
     if idx == len(STAGE_ORDER) - 1:
         st["cycle"] += 1
         st["stage"] = STAGE_ORDER[0]
+        st["repair_attempts"] = 0
+        st["replan_attempts"] = 0
     else:
         st["stage"] = STAGE_ORDER[idx + 1]
     st["status"] = "pending"
+
+
+def route_after_submit(st, cfg):
+    """Decide where a finished run goes next, from the submit agent's verdict.
+
+    A run that produced no usable score is not a cycle - it is a defect, and the
+    defect has two very different causes:
+
+      dev_bug     something we wrote is broken (crash, bad submission format,
+                  overlapping masks). The proposal is still fine, so go straight
+                  back to implement and fix it.
+      logic_error the code did what it was told and the idea itself did not hold
+                  up (unrunnable plan, wrong data assumption). Code cannot fix
+                  that, so go back to research for a new proposal.
+
+    implement <-> submit keeps cycling until a run scores, bounded so a loop that
+    cannot fix itself escalates instead of burning cycles forever.
+    """
+    h, ok, why = read_handoff()
+    rcfg = cfg["loop"].get("repair", {})
+    max_repair = rcfg.get("max_repair_attempts", 3)
+    max_replan = rcfg.get("max_replans_per_cycle", 2)
+
+    if not ok:                       # contract check already failed on this
+        return "failed", why
+    outcome = h["outcome"]
+    reason = str(h.get("reason", "")).strip()
+    st["last_failure"] = None if outcome == "success" else {
+        "outcome": outcome,
+        "reason": reason,
+        "exp": h.get("exp"),
+        "details": h.get("details"),
+        "at": iso(now()),
+    }
+    clear_handoff()
+
+    if outcome == "success":
+        st["repair_attempts"] = 0
+        st["replan_attempts"] = 0
+        advance(st)                  # -> review
+        return "success", "run scored; handing to review"
+
+    if outcome == "dev_bug":
+        st["repair_attempts"] += 1
+        if st["repair_attempts"] <= max_repair:
+            st["stage"] = "implement"
+            st["status"] = "pending"
+            return "repair", "dev_bug #{}/{}: {}".format(
+                st["repair_attempts"], max_repair, reason)
+        # implement cannot fix it - treat as a planning problem instead
+        log("{} repair attempts exhausted; escalating to research".format(max_repair))
+        outcome, reason = "logic_error", (
+            "escalated after {} failed repairs :: {}".format(max_repair, reason))
+
+    if outcome == "logic_error":
+        st["replan_attempts"] += 1
+        st["repair_attempts"] = 0
+        if st["replan_attempts"] <= max_replan:
+            st["cycle"] += 1         # a new proposal is a new cycle
+            st["stage"] = "research"
+            st["status"] = "pending"
+            return "replan", "logic_error #{}/{}: {}".format(
+                st["replan_attempts"], max_replan, reason)
+        return "exhausted", (
+            "{} replans and {} repairs did not produce a scoring run :: {}".format(
+                max_replan, max_repair, reason))
+
+    return "failed", "unhandled outcome {!r}".format(outcome)
 
 
 def main():
@@ -359,6 +504,10 @@ def main():
         st["blocked_reason"] = None
         st["resume_after"] = None
         st["consecutive_failures"] = 0
+        # A human resume grants a fresh repair budget - correct only because the
+        # human is expected to have fixed something first (see /continue).
+        st["repair_attempts"] = 0
+        st["replan_attempts"] = 0
     elif st["status"] == "blocked":
         log("loop is BLOCKED ({}). Run `/continue` or "
             "`python orchestrator/run_loop.py --resume`.".format(st.get("blocked_reason")))
@@ -393,6 +542,8 @@ def main():
         st["status"] = "running"
         save_state(st)
         stage = st["stage"]
+        if stage == "submit":
+            clear_handoff()   # never route on a previous run's verdict
         outcome, detail = run_stage(stage, st, cfg, args.dry_run)
         record(st, stage, outcome, detail)
 
@@ -419,7 +570,24 @@ def main():
             continue
 
         st["consecutive_failures"] = 0
-        advance(st)
+
+        if stage == "submit":
+            verdict, detail = route_after_submit(st, cfg)
+            record(st, "route", verdict, detail)
+            log("route after submit -> {} :: {}".format(verdict, detail))
+            if verdict == "exhausted":
+                st["status"] = "blocked"
+                st["blocked_reason"] = "repair loop exhausted: " + detail
+                save_state(st)
+                log("implement/submit could not produce a scoring run; "
+                    "parking for human review.")
+                return 3
+            if verdict == "failed":
+                st["status"] = "failed"
+                save_state(st)
+                return 3
+        else:
+            advance(st)
         save_state(st)
 
         if args.once:
