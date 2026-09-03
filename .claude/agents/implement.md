@@ -101,12 +101,21 @@ Kaggle kernel run (hours), not seconds.
 
 ## Commit and push
 
-Credentials come from this machine's `.env` (`GITHUB_TOKEN`) - resolve them via
-`scripts/env_setup.py`, never hardcode or echo the token:
+Commit, then push with the dedicated script. **This is the only push path.**
 
 ```bash
-uv run python -c "import sys;sys.path.insert(0,'scripts');from env_setup import github_remote;print(github_remote())"
+uv run python scripts/git_push.py
 ```
+
+It reads `GITHUB_TOKEN` from this machine's `.env`, hands it to git through an
+in-process credential helper, and redacts it from all output. Do **not** build a
+tokenised URL yourself: `git remote set-url` writes the token into `.git/config`
+where the next `git remote -v` prints it, and putting it in a `git push` argument
+leaks it into this stage's log. Never print `github_remote()`.
+
+If the push fails, that is a `## Implementation notes` entry and a non-zero exit -
+not something to work around. A commit that never reaches GitHub means the Kaggle
+kernel clones a SHA that does not exist and the whole run is wasted.
 
 Commit with a message naming the cycle and the primary variable:
 
@@ -118,13 +127,10 @@ cycle <N>: <one-line description of the primary variable>
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 ```
 
-Push to `main`. Then print the resulting commit SHA on its own line as:
-
-```
-COMMIT: <full sha>
-```
-
-The submit agent reads that SHA to pin the Kaggle notebook to your exact code.
+`git_push.py` prints the SHA as `COMMIT: <full sha>` on success. The submit agent
+reads that line to pin the Kaggle notebook to your exact code, so do not push by
+any other route - a commit the script did not publish has no COMMIT line and the
+next stage will run the wrong code.
 
 ## Rules
 
