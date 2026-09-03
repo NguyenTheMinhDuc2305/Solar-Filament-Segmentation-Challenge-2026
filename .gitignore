@@ -1,0 +1,27 @@
+# per-machine credentials - never commit
+.env
+*.key
+kaggle.json
+
+# loop runtime state (machine-local; shared_memory/ is the shared record).
+# STATE.md is a mirror of state.json - per-machine, so it would conflict
+# between teammates. The shared record is COMPETITION/PROPOSAL/RESULTS.
+orchestrator/state.json
+orchestrator/logs/
+shared_memory/STATE.md
+
+# build artifacts / data
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+data/
+artifacts/
+weights/
+*.pth
+*.ckpt
+submission*.csv
+.kaggle_work/
+
+# editors
+.vscode/
+.idea/

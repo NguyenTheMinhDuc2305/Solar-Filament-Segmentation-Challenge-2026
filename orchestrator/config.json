@@ -1,0 +1,86 @@
+{
+  "competition": {
+    "slug": "filament-segmentation-2026",
+    "metric": "panoptic_quality",
+    "metric_direction": "maximize",
+    "max_daily_submissions": 5,
+    "deadline_utc": "2026-11-15T06:00:00Z"
+  },
+  "github": {
+    "owner": "NguyenTheMinhDuc2305",
+    "repo": "Solar-Filament-Segmentation-Challenge-2026",
+    "branch": "main"
+  },
+  "kaggle": {
+    "username": null,
+    "_username_note": "Always null in git. Resolved at runtime from .env via scripts/env_setup.py so each teammate runs under their own Kaggle account.",
+    "kernel_slug_prefix": "filament-runner",
+    "artifact_dataset_slug": "filament-artifacts",
+    "enable_gpu": true,
+    "enable_internet": true,
+    "kernel_poll_seconds": 120,
+    "kernel_timeout_seconds": 43200
+  },
+  "loop": {
+    "scout_interval_hours": 24,
+    "stages": [
+      "research",
+      "implement",
+      "submit",
+      "review"
+    ],
+    "max_cycles": 0,
+    "stage_timeout_seconds": 5400,
+    "cooldown_seconds_between_cycles": 60,
+    "submit_gate": {
+      "mode": "cv_improvement",
+      "min_cv_delta": 0.002,
+      "always_submit_first_n_cycles": 1,
+      "reserve_daily_slots": 1
+    }
+  },
+  "agents": {
+    "scout": {
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "research": {
+      "model": "opus",
+      "effort": "high"
+    },
+    "implement": {
+      "model": "sonnet",
+      "effort": "high"
+    },
+    "submit": {
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "review": {
+      "model": "opus",
+      "effort": "high"
+    }
+  },
+  "claude": {
+    "permission_mode": "auto",
+    "extra_args": []
+  },
+  "anchors": {
+    "human_ceiling_pq": 0.341,
+    "classical_baseline_pq": 0.095,
+    "target_pq": 0.35,
+    "note": "Public LB is compromised by a test-set leak. Trust local OOF CV, not LB."
+  },
+  "team": {
+    "shared_memory_is_committed": true,
+    "per_member_env_file": ".env",
+    "required_env": [
+      "KAGGLE_API_TOKEN",
+      "GITHUB_TOKEN"
+    ],
+    "optional_env": [
+      "TEAM_MEMBER"
+    ],
+    "_note": "Kaggle kernels and artifact datasets are namespaced per member; shared_memory/ is the single shared record."
+  }
+}

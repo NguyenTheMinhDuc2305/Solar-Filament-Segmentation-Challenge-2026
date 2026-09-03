@@ -1,0 +1,8 @@
+# Extra deps installed inside the Kaggle notebook, on top of the base image.
+# The base image already ships torch, torchvision, numpy, pandas, opencv,
+# scikit-learn and scipy - do NOT list those, reinstalling wastes kernel minutes.
+# Pin everything: an unpinned dep silently changes what a cycle measured.
+
+segmentation-models-pytorch==0.4.0
+albumentations==1.4.21
+pycocotools==2.0.8
