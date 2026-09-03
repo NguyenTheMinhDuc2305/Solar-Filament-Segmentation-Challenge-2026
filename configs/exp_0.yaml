@@ -1,0 +1,18 @@
+# cycle 0 - baseline: 1024px ResNet-34 U-Net on union masks, instances via
+# connected components. See shared_memory/PROPOSAL.md for the rationale behind
+# every value here; nothing in src/ should hardcode a number that belongs here.
+
+img_size: 1024
+encoder: resnet34
+encoder_weights: imagenet
+folds: 5
+epochs: 40
+batch_size: 4
+lr: 3.0e-4
+lr_min: 1.0e-6
+prob_threshold: 0.5
+min_area_px: 200
+target: union
+seed: 42
+time_budget_hours: 9
+num_workers: 2

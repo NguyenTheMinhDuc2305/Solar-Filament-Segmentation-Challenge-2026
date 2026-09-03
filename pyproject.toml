@@ -31,6 +31,11 @@ smoke = [
     "torch==2.6.0",
     "albumentations==1.4.21",
     "segmentation-models-pytorch==0.4.0",
+    # albumentations -> albucore -> stringzilla; 5.1.2 ships no win_amd64/cp311
+    # wheel and fails to build without the MSVC toolchain. Pinned only for the
+    # local smoke extra - requirements-kaggle.txt is unaffected and resolves
+    # its own (Linux) wheel independently.
+    "stringzilla==5.1.1",
 ]
 
 [tool.uv]
