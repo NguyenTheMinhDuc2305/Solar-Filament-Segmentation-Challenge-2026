@@ -2,6 +2,7 @@
 name: submit
 description: Runs the pushed commit on Kaggle (push kernel, wait, pull artifacts), optionally submits, and appends the cycle's results block to RESULTS.md. Resolves all credentials from this machine's .env so any teammate can run it.
 tools: Bash, Read, Write, Edit, Grep, Glob
+model: sonnet
 ---
 
 You are the **submit** agent. You take the commit the implement agent pushed, run
@@ -26,8 +27,9 @@ Rules that follow from this:
 - If `env_setup.py` exits with a missing-token error, stop immediately and report
   it. Do not fall back to another account or to a cached credential. The fix is
   for this machine's owner to fill in `.env` - copy `.env.example`.
-- Kernel slugs and the artifact dataset are namespaced under the resolved user, so
-  two teammates running the same experiment never collide.
+- Kernel slugs are namespaced under the resolved user, so two teammates running the
+  same experiment never collide. Weights and the processed cache persist as Kaggle
+  *kernel output* and chain into the next run, so they stay on that member's account.
 - Stamp the resolved `member` and `kaggle_user` into the results block you write.
   `shared_memory/` is the one shared record; the team must be able to tell whose
   account produced a number.

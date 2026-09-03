@@ -59,7 +59,7 @@ def git_head() -> str:
 
 
 # ------------------------------------------------------------------ notebook gen
-def build_notebook(exp: str, commit: str, ident: dict) -> dict:
+def build_notebook(exp: str, commit: str, ident: dict, warm_from: str = "") -> dict:
     """Wrap notebooks/runner_template.py into a 2-cell .ipynb.
 
     The template is kept as plain Python so it stays diffable and lintable;
@@ -77,7 +77,7 @@ def build_notebook(exp: str, commit: str, ident: dict) -> dict:
         "    'repo_name': {!r},".format(gh["repo"]),
         "    'branch': {!r},".format(gh["branch"]),
         "    'competition': {!r},".format(CONFIG["competition"]["slug"]),
-        "    'artifact_dataset': {!r},".format(CONFIG["kaggle"]["artifact_dataset_slug"]),
+        "    'warm_from': {!r},".format(warm_from),
         "    'kaggle_user': {!r},".format(ident["kaggle_user"]),
         "    'member': {!r},".format(ident["member"]),
         "    'launched_at': {!r},".format(now_iso()),
@@ -110,7 +110,7 @@ def kernel_id(exp: str, ident: dict) -> str:
     return "{}/{}".format(ident["kaggle_user"], kernel_slug(exp))
 
 
-def stage_kernel(exp: str, commit: str, ident: dict) -> Path:
+def stage_kernel(exp: str, commit: str, ident: dict, warm_from: str = "") -> Path:
     """Materialise the push folder: kernel-metadata.json + runner.ipynb."""
     folder = WORK / kernel_slug(exp)
     if folder.exists():
@@ -131,27 +131,35 @@ def stage_kernel(exp: str, commit: str, ident: dict) -> Path:
         "competition_sources": [CONFIG["competition"]["slug"]],
         "kernel_sources": [],
     }
-    # Warm-start from this member's own artifact dataset if it already exists.
-    art = "{}/{}".format(ident["kaggle_user"], kcfg["artifact_dataset_slug"])
-    if dataset_exists(art):
-        meta["dataset_sources"].append(art)
-        log("attaching artifact dataset {}".format(art))
+    # Warm start from the previous run's *kernel output*. Kaggle persists whatever
+    # a completed kernel leaves in /kaggle/working, so weights and the processed
+    # cache chain forward with no dataset to publish and no Kaggle token inside
+    # the notebook.
+    if warm_from:
+        meta["kernel_sources"].append(warm_from)
+        log("warm starting from kernel {}".format(warm_from))
 
     (folder / "kernel-metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     (folder / "runner.ipynb").write_text(
-        json.dumps(build_notebook(exp, commit, ident), indent=1), encoding="utf-8")
+        json.dumps(build_notebook(exp, commit, ident, warm_from), indent=1), encoding="utf-8")
     return folder
 
 
-def dataset_exists(ref: str) -> bool:
+def latest_runner_kernel(ident: dict, exclude: str = "") -> str:
+    """Most recent completed runner kernel owned by this member, if any."""
     api = kaggle_api()
-    owner, slug = ref.split("/", 1)
+    prefix = CONFIG["kaggle"]["kernel_slug_prefix"]
     try:
-        res = api.dataset_list(user=owner, search=slug)
-        items = getattr(res, "datasets", None) or res
-        return any(str(getattr(d, "ref", "")).lower() == ref.lower() for d in items)
-    except Exception:  # noqa: BLE001 - absence is the common case, treat errors as absent
-        return False
+        kernels = api.kernels_list(user=ident["kaggle_user"], search=prefix,
+                                   sort_by="dateRun", page_size=20) or []
+    except Exception as e:  # noqa: BLE001 - a cold start is a normal outcome here
+        log("could not list previous kernels ({}); starting cold".format(e))
+        return ""
+    for k in kernels:
+        ref = str(getattr(k, "ref", "") or "")
+        if ref and prefix in ref and ref != exclude:
+            return ref
+    return ""
 
 
 # ---------------------------------------------------------------------- actions
@@ -161,7 +169,11 @@ def cmd_push(args) -> int:
     commit = args.commit or git_head()
     if not commit:
         log("WARNING: no git commit resolved; the notebook will clone branch HEAD")
-    folder = stage_kernel(args.exp, commit, ident)
+    warm_from = ""
+    if not getattr(args, "no_warm_start", False):
+        warm_from = getattr(args, "warm_from", None) or latest_runner_kernel(
+            ident, exclude=kernel_id(args.exp, ident))
+    folder = stage_kernel(args.exp, commit, ident, warm_from)
     log("pushing kernel {} (commit {})".format(kernel_id(args.exp, ident), commit[:8] or "HEAD"))
     resp = api.kernels_push(str(folder))
     url = getattr(resp, "url", None) or getattr(resp, "ref", "")
@@ -457,16 +469,24 @@ def main() -> int:
             p.add_argument("--exp", required=True, help="experiment id, e.g. exp_0007")
         return p
 
-    add("push", cmd_push).add_argument("--commit", help="git sha the notebook should check out")
-    add("wait", cmd_wait)
-    add("pull", cmd_pull)
-    add("logs", cmd_logs)
+    def add_warm_args(p):
+        p.add_argument("--warm-from",
+                       help="kernel ref to warm start from, e.g. user/filament-runner-exp-0006")
+        p.add_argument("--no-warm-start", action="store_true",
+                       help="ignore previous kernel output and start cold")
 
     def add_wait_args(p):
         p.add_argument("--score-timeout", type=int, default=1800,
                        help="seconds to keep polling for a score (default 1800)")
         p.add_argument("--poll-interval", type=int, default=20,
                        help="seconds between score polls (default 20)")
+
+    p_push = add("push", cmd_push)
+    p_push.add_argument("--commit", help="git sha the notebook should check out")
+    add_warm_args(p_push)
+    add("wait", cmd_wait)
+    add("pull", cmd_pull)
+    add("logs", cmd_logs)
 
     p_sub = add("submit", cmd_submit, needs_exp=False)
     p_sub.add_argument("--exp")
@@ -482,6 +502,7 @@ def main() -> int:
     p_run.add_argument("--commit")
     p_run.add_argument("--submit", action="store_true", help="also submit submission.csv")
     p_run.add_argument("--message")
+    add_warm_args(p_run)
     add_wait_args(p_run)
 
     sub.add_parser("limits").set_defaults(fn=cmd_limits)

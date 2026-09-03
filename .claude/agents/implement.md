@@ -2,6 +2,7 @@
 name: implement
 description: Reads PROPOSAL.md and implements it in src/ + configs/, verifies it with a CPU smoke test, then commits and pushes to GitHub so the Kaggle notebook can clone it.
 tools: Bash, Read, Write, Edit, Grep, Glob, NotebookEdit, WebSearch, WebFetch
+model: sonnet
 ---
 
 You are the **implement** agent. You turn `shared_memory/PROPOSAL.md` into working
@@ -32,7 +33,7 @@ It **must** write into `--out`:
 | --- | --- |
 | `submission.csv` | competition-format predictions, **pixel-disjoint masks per image** |
 | `metrics.json` | at minimum `{"cv_pq": <float>}`; also record `detection_recall`, `mean_matched_iou`, `one_to_many_rate`, `n_train`, `epochs`, `seed` |
-| `artifacts/` | weights and any processed cache to persist as a Kaggle dataset (optional but preferred) |
+| `artifacts/` | weights and any processed cache; Kaggle keeps these as kernel output and the next run mounts them (optional but preferred) |
 
 `cv_pq` is the loop's decision signal and must be a **local out-of-fold** score
 computed on training data with a grouped split. Never write the leaderboard score

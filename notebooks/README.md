@@ -27,18 +27,23 @@ Each member trains on their **own** Kaggle account, so each does this once:
    | Secret name | Value |
    | --- | --- |
    | `GITHUB_TOKEN` | your GitHub PAT with `repo` scope - lets the kernel clone this repo |
-   | `KAGGLE_API_TOKEN` | your own Kaggle token - lets the kernel version the artifact dataset |
 
-   Attach both to the notebook the first time it runs (Kaggle asks).
+   Attach it to the notebook the first time it runs (Kaggle asks).
+
+   **This is the only secret the notebook needs.** It runs on Kaggle's machines,
+   which cannot see your local `.env`, and the repo is private - hence the token.
+   No Kaggle token goes in here: every Kaggle API call (submit, poll for the score,
+   fetch results, forum scouting) happens locally with the token in `.env`.
 
 2. **Local `.env`** - copy `.env.example` to `.env` and fill in the same two
    tokens. `.env` is gitignored; it is the only place your identity lives.
 
 3. Verify: `python scripts/env_setup.py` should print your Kaggle username.
 
-Kernel slugs (`filament-runner-<exp>`) and the artifact dataset
-(`<you>/filament-artifacts`) are namespaced under whoever runs them, so two
-members can run the same experiment without colliding. Only `shared_memory/` is
+Kernel slugs (`filament-runner-<exp>`) are namespaced under whoever runs them, so
+two members can run the same experiment without colliding. Weights and the
+processed cache persist as **kernel output** and chain into the next run via
+`kernel_sources` - nothing is published as a dataset and nothing needs a token. Only `shared_memory/` is
 shared, through git.
 
 ## What `src/run.py` must honour
@@ -46,11 +51,11 @@ shared, through git.
 | Path | Direction | Meaning |
 | --- | --- | --- |
 | `/kaggle/input/filament-segmentation-2026/` | read | competition data |
-| `/kaggle/input/filament-artifacts/` | read | previous weights + processed cache, if any |
+| `/kaggle/input/<previous kernel>/` | read | previous weights + processed cache, if any |
 | `configs/artifact_input.json` | read | written by the notebook when the above exists |
 | `/kaggle/working/submission.csv` | write | **pixel-disjoint masks per image** |
 | `/kaggle/working/metrics.json` | write | must contain a real local OOF `cv_pq` |
-| `/kaggle/working/artifacts/` | write | persisted to the Kaggle dataset |
+| `/kaggle/working/artifacts/` | write | kept as kernel output, chained into the next run |
 
 `run_status.json` is always written, even on failure, so the submit agent can
 tell a crash from a bad score.

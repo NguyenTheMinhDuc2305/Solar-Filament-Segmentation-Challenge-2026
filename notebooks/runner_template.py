@@ -8,15 +8,19 @@ inside notebook JSON.
 Contract with the rest of the pipeline
 --------------------------------------
 Reads   : /kaggle/input/<competition>/            competition data
-          /kaggle/input/<artifact_dataset>/       previous weights + processed cache (optional)
+          /kaggle/input/<previous kernel slug>/   previous weights + processed cache (optional)
 Writes  : /kaggle/working/submission.csv          the file that gets submitted
           /kaggle/working/metrics.json            {"cv_pq": float, ...}  <- the loop's real signal
           /kaggle/working/run_log.txt             full stdout, for post-mortems
-Pushes  : <kaggle_user>/<artifact_dataset>        weights + processed cache, versioned
+          /kaggle/working/artifacts/            weights + processed cache, kept as
+                                                kernel output and chained into the
+                                                next run via `kernel_sources`
 
 Secrets required on the Kaggle side (Add-ons -> Secrets, attached to the notebook):
-          GITHUB_TOKEN       PAT with repo scope, to clone this private repo
-          KAGGLE_API_TOKEN   this member's own token, to version the artifact dataset
+          GITHUB_TOKEN       PAT with repo scope, to clone this private repo.
+                             This is the ONLY secret this notebook needs - every
+                             Kaggle API call (submit, poll, fetch results, forum
+                             scouting) happens locally with the token in .env.
 """
 
 import json
@@ -30,7 +34,6 @@ from pathlib import Path
 
 WORKING = Path("/kaggle/working")
 REPO_DIR = WORKING / "repo"
-ARTIFACT_STAGE = WORKING / "_artifact_stage"
 LOG_PATH = WORKING / "run_log.txt"
 
 _t0 = time.time()
@@ -116,63 +119,65 @@ def run_experiment(params):
     else:
         log("WARNING: {} not found; src/run.py must fall back to its defaults".format(cfg))
 
-    env_note = REPO_DIR / "configs" / "artifact_input.json"
-    art_in = Path("/kaggle/input") / params["artifact_dataset"]
-    if art_in.exists():
-        log("previous artifacts available at {}".format(art_in))
-        env_note.parent.mkdir(parents=True, exist_ok=True)
-        env_note.write_text(json.dumps({"artifact_input": str(art_in)}), encoding="utf-8")
+    art_in = find_previous_artifacts(params)
+    if art_in:
+        log("warm start available: {}".format(art_in))
+        note = REPO_DIR / "configs" / "artifact_input.json"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(json.dumps({"artifact_input": str(art_in)}), encoding="utf-8")
+    else:
+        log("no previous artifacts mounted; this run starts cold")
 
     sh(cmd, cwd=str(REPO_DIR))
 
 
-# ------------------------------------------------------- 3. persist artifacts
-def push_artifacts(params):
-    """Version weights + processed cache as a private Kaggle dataset.
+def find_previous_artifacts(params):
+    """Locate the previous run's artifacts among the mounted inputs.
 
-    Weights never travel through anyone's laptop: they are written here and read
-    back by the next kernel as an attached data source.
+    kaggle_run.py attaches the prior kernel via `kernel_sources`, so its output
+    mounts at /kaggle/input/<that kernel slug>/. Prefer the slug we were told to
+    warm from; otherwise fall back to any mounted runner kernel.
+    """
+    root = Path("/kaggle/input")
+    if not root.exists():
+        return None
+
+    named = params.get("warm_from")
+    if named:
+        cand = root / named.split("/")[-1]
+        if cand.exists():
+            return cand / "artifacts" if (cand / "artifacts").exists() else cand
+
+    for d in sorted(root.iterdir(), reverse=True):
+        if not d.is_dir() or d.name == params["competition"]:
+            continue
+        if (d / "artifacts").exists():
+            return d / "artifacts"
+    return None
+
+
+# ------------------------------------------------------- 3. persist artifacts
+def describe_artifacts(params):
+    """Artifacts persist as *kernel output* - no Kaggle token needed in here.
+
+    Kaggle already keeps everything left in /kaggle/working when a kernel
+    completes, and the next run attaches this kernel via `kernel_sources` in
+    kernel-metadata.json (scripts/kaggle_run.py wires that up). So weights and
+    the processed cache stay on Kaggle and chain forward on their own, and this
+    notebook needs no Kaggle credentials at all.
     """
     src = WORKING / "artifacts"
     if not src.exists() or not any(src.rglob("*")):
-        log("no /kaggle/working/artifacts to persist; skipping dataset push")
+        log("no /kaggle/working/artifacts produced; next run starts cold")
         return
-
-    token = get_secret("KAGGLE_API_TOKEN", required=False)
-    if not token:
-        log("KAGGLE_API_TOKEN secret absent; leaving artifacts in kernel output only")
-        return
-    os.environ["KAGGLE_API_TOKEN"] = token
-
-    if ARTIFACT_STAGE.exists():
-        shutil.rmtree(ARTIFACT_STAGE)
-    shutil.copytree(src, ARTIFACT_STAGE)
-
-    ref = "{}/{}".format(params["kaggle_user"], params["artifact_dataset"])
-    meta = {
-        "title": params["artifact_dataset"],
-        "id": ref,
-        "licenses": [{"name": "unknown"}],
-    }
-    (ARTIFACT_STAGE / "dataset-metadata.json").write_text(
-        json.dumps(meta, indent=2), encoding="utf-8")
-
-    from kaggle.api.kaggle_api_extended import KaggleApi
-    api = KaggleApi()
-    api.authenticate()
-    notes = "{} | commit {} | {}".format(
-        params["exp"], (params.get("commit") or "HEAD")[:8], params["launched_at"])
-    try:
-        api.dataset_create_version(str(ARTIFACT_STAGE), version_notes=notes,
-                                   dir_mode="zip", quiet=False)
-        log("artifact dataset versioned: {}".format(ref))
-    except Exception as e:  # noqa: BLE001 - first run has no dataset to version yet
-        log("version failed ({}); trying to create the dataset".format(e))
-        api.dataset_create_new(str(ARTIFACT_STAGE), public=False,
-                               dir_mode="zip", quiet=False)
-        log("artifact dataset created: {}".format(ref))
-    finally:
-        shutil.rmtree(ARTIFACT_STAGE, ignore_errors=True)
+    files = sorted(p for p in src.rglob("*") if p.is_file())
+    total = sum(p.stat().st_size for p in files)
+    log("persisting {} artifact file(s), {:.1f} MB, as kernel output".format(
+        len(files), total / 1e6))
+    for p in files[:20]:
+        log("    {} ({:.1f} MB)".format(p.relative_to(WORKING), p.stat().st_size / 1e6))
+    if total > 19e9:
+        log("WARNING: kernel output limit is ~20GB; prune artifacts/ or the save will fail")
 
 
 # ------------------------------------------------------------------- 4. verify
@@ -216,7 +221,7 @@ def main():
         install_requirements()
         run_experiment(params)
         verify_outputs(params)
-        push_artifacts(params)
+        describe_artifacts(params)
     except Exception as e:  # noqa: BLE001 - always leave a machine-readable verdict
         status, error = "error", "{}: {}".format(type(e).__name__, e)
         log("FAILED: " + error)

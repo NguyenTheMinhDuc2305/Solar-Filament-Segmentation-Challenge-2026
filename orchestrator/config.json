@@ -15,11 +15,12 @@
     "username": null,
     "_username_note": "Always null in git. Resolved at runtime from .env via scripts/env_setup.py so each teammate runs under their own Kaggle account.",
     "kernel_slug_prefix": "filament-runner",
-    "artifact_dataset_slug": "filament-artifacts",
     "enable_gpu": true,
     "enable_internet": true,
     "kernel_poll_seconds": 120,
-    "kernel_timeout_seconds": 43200
+    "kernel_timeout_seconds": 43200,
+    "warm_start_from_previous_kernel": true,
+    "_artifacts_note": "Weights + processed cache persist as Kaggle kernel output and chain into the next run via kernel_sources. No Kaggle token is needed inside the notebook."
   },
   "loop": {
     "scout_interval_hours": 24,
@@ -81,6 +82,9 @@
     "optional_env": [
       "TEAM_MEMBER"
     ],
-    "_note": "Kaggle kernels and artifact datasets are namespaced per member; shared_memory/ is the single shared record."
+    "_note": "Kernels are namespaced per member; shared_memory/ is the single shared record. GITHUB_TOKEN is the only Kaggle Secret - the notebook needs it to clone the private repo. All Kaggle API calls run locally from .env.",
+    "kaggle_secrets_required": [
+      "GITHUB_TOKEN"
+    ]
   }
 }

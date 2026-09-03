@@ -71,9 +71,12 @@ cp .env.example .env      # fill in KAGGLE_API_TOKEN and GITHUB_TOKEN
 python scripts/env_setup.py   # should print your Kaggle username
 ```
 
-Also add both tokens as **Kaggle Secrets** so the notebook can clone and persist
-artifacts - see `notebooks/README.md`. Kernel slugs and the artifact dataset are
-namespaced per member, so nobody collides.
+Kernel slugs are namespaced per member, so nobody collides.
+
+`GITHUB_TOKEN` is the **only** Kaggle Secret needed (`notebooks/README.md`): the notebook runs on Kaggle's
+machines and cannot see your `.env`, so it needs that token to clone this private
+repo. Every Kaggle API call - submit, poll, fetch results, forum scouting - runs
+locally with the token in `.env`.
 
 ## Compute
 
@@ -82,7 +85,8 @@ This machine has **no CUDA GPU**. Never train locally. The flow is:
 ```
 implement pushes commit ──> kernel clones that SHA ──> trains + infers on Kaggle
                                                             │
-              weights + processed cache ──> Kaggle dataset ─┘  (never touch a laptop)
+      weights + processed cache ──> kept as kernel output ─┘  (never touch a laptop,
+                                    chained into the next run via kernel_sources)
               submission.csv + metrics.json ──> pulled locally ──> submitted
 ```
 
@@ -101,8 +105,8 @@ push → poll → pull → submit → **wait for the score** in one call.
 4. **Never fabricate a metric.** `"cv_pq": null` plus an `error` explaining why is
    far more useful than a plausible number.
 5. **30% of the grade is not the model**: a 4-page PDF report, a public repo, and
-   modular code are mandatory to be judged at all. The repo is currently private
-   and must be made public before judging.
+   modular code are mandatory to be judged at all. The repo is **deliberately
+   private for now**; it must be flipped to public before judging.
 
 ## Anchors
 

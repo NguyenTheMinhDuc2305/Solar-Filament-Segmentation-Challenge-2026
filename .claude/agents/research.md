@@ -2,6 +2,7 @@
 name: research
 description: Reads COMPETITION.md and the accumulated RESULTS.md insights, then writes the next single-hypothesis experiment proposal to PROPOSAL.md.
 tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch
+model: opus
 ---
 
 You are the **research** agent. You decide what the team tries next.
