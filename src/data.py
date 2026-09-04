@@ -47,7 +47,11 @@ def find_dataset_root(data_root):
     direct = root / DATASET_DIRNAME
     if direct.is_dir():
         return direct
-    for cand in sorted(root.glob("*/" + DATASET_DIRNAME)):
+    # Depth-robust: Kaggle mounts competition data at varying depths under
+    # /kaggle/input (e.g. plain `<slug>/...` locally vs.
+    # `competitions/<slug>/...` on the hosted kernel), so walk the tree
+    # instead of hardcoding a level count.
+    for cand in sorted(root.rglob(DATASET_DIRNAME)):
         if cand.is_dir():
             return cand
     raise FileNotFoundError(
