@@ -103,7 +103,26 @@ def build_notebook(exp: str, commit: str, ident: dict, warm_from: str = "") -> d
 
 
 def kernel_slug(exp: str) -> str:
-    return "{}-{}".format(CONFIG["kaggle"]["kernel_slug_prefix"], slugify(exp))
+    """One notebook for every experiment, unless explicitly configured otherwise.
+
+    Kaggle secrets attach to a *notebook*, through the UI, and there is no field
+    for them in kernel-metadata.json - `ApiSaveKernelRequest` carries none. A
+    per-experiment slug therefore pushes a brand new notebook every cycle, and a
+    brand new notebook has `KAGGLE_KERNEL_INTEGRATIONS` empty, so the very first
+    `UserSecretsClient().get_secret(...)` fails and the repo can never be cloned.
+    Measured on a probe kernel: internet fine, secrets token present in the env,
+    integrations empty, every secret name failing identically.
+
+    Reusing one slug pushes a new *version* of the same notebook, which keeps the
+    attachment. `GITHUB_TOKEN` is attached once by hand and the loop then runs
+    unattended. Which experiment is running travels in the notebook's PARAMS cell,
+    and RESULTS.md maps each cycle to its commit, so nothing is lost by sharing
+    the slug.
+    """
+    prefix = CONFIG["kaggle"]["kernel_slug_prefix"]
+    if CONFIG["kaggle"].get("stable_kernel_slug", True):
+        return prefix
+    return "{}-{}".format(prefix, slugify(exp))
 
 
 def kernel_id(exp: str, ident: dict) -> str:
@@ -169,10 +188,18 @@ def cmd_push(args) -> int:
     commit = args.commit or git_head()
     if not commit:
         log("WARNING: no git commit resolved; the notebook will clone branch HEAD")
-    warm_from = ""
-    if not getattr(args, "no_warm_start", False):
-        warm_from = getattr(args, "warm_from", None) or latest_runner_kernel(
-            ident, exclude=kernel_id(args.exp, ident))
+    warm_from = getattr(args, "warm_from", None) or ""
+    if warm_from:
+        pass
+    elif getattr(args, "no_warm_start", False):
+        warm_from = ""
+    elif not CONFIG["kaggle"].get("warm_start_from_previous_kernel", True):
+        # Stable slug: the only previous runner kernel IS this one, and a kernel
+        # cannot list itself in kernel_sources. Skip the lookup rather than spend
+        # an API call to rediscover that every cycle.
+        warm_from = ""
+    else:
+        warm_from = latest_runner_kernel(ident, exclude=kernel_id(args.exp, ident))
     folder = stage_kernel(args.exp, commit, ident, warm_from)
     log("pushing kernel {} (commit {})".format(kernel_id(args.exp, ident), commit[:8] or "HEAD"))
     resp = api.kernels_push(str(folder))
@@ -194,13 +221,12 @@ def poll_kernel(exp: str, ident: dict) -> tuple[str, str]:
     while time.time() < deadline:
         try:
             st = api.kernels_status(kid)
-            status = str(getattr(st, "status", "")).lower()
+            status = _norm_status(getattr(st, "status", ""))
             fail = getattr(st, "failure_message", "") or ""
         except Exception as e:  # noqa: BLE001 - transient API blips shouldn't kill the wait
             log("status poll error ({}); retrying".format(e))
             time.sleep(kcfg["kernel_poll_seconds"])
             continue
-        status = status.replace("kernelworkerstatus_", "")
         if status != last:
             log("kernel {} -> {}".format(kid, status))
             last = status

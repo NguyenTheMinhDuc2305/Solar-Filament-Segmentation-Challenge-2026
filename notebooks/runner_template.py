@@ -62,17 +62,36 @@ def sh(cmd, cwd=None, check=True, secret=None):
 
 
 def get_secret(name, required=True):
+    """Read a Kaggle Secret, and say precisely why when it is not readable.
+
+    The failure that actually happens is a ConnectionError from the secrets
+    service, which reads like a network problem and is not one. Secrets attach to
+    a *notebook* through the Kaggle UI; a notebook with none attached reports an
+    empty KAGGLE_KERNEL_INTEGRATIONS and every lookup fails identically,
+    whatever the name. Distinguishing the two saves a cycle of misdiagnosis.
+    """
+    attached = os.environ.get("KAGGLE_KERNEL_INTEGRATIONS", "")
     try:
         from kaggle_secrets import UserSecretsClient
         return UserSecretsClient().get_secret(name)
     except Exception as e:  # noqa: BLE001
-        if required:
+        if not required:
+            log("optional secret '{}' unavailable: {}".format(name, e))
+            return None
+        if not attached.strip():
             raise RuntimeError(
-                "Missing Kaggle Secret '{}'. Add it under Add-ons -> Secrets and "
-                "attach it to this notebook. ({})".format(name, e)
+                "No Kaggle Secret is attached to this notebook "
+                "(KAGGLE_KERNEL_INTEGRATIONS is empty), so '{}' cannot be read. "
+                "The secret existing on the account is not enough - open this "
+                "notebook on kaggle.com once, Add-ons -> Secrets, and attach it. "
+                "Later API pushes are new versions of the same notebook and keep "
+                "the attachment. Underlying error: {}".format(name, e)
             )
-        log("optional secret '{}' unavailable: {}".format(name, e))
-        return None
+        raise RuntimeError(
+            "Secret '{}' could not be read although this notebook has "
+            "integrations attached ({}). Check the name and that this secret is "
+            "among them. Underlying error: {}".format(name, attached, e)
+        )
 
 
 # --------------------------------------------------------------------- 1. clone

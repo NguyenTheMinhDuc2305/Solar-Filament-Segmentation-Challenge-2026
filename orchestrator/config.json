@@ -19,8 +19,11 @@
     "enable_internet": true,
     "kernel_poll_seconds": 120,
     "kernel_timeout_seconds": 43200,
-    "warm_start_from_previous_kernel": true,
-    "_artifacts_note": "Weights + processed cache persist as Kaggle kernel output and chain into the next run via kernel_sources. No Kaggle token is needed inside the notebook."
+    "warm_start_from_previous_kernel": false,
+    "_artifacts_note": "Weights + processed cache persist as Kaggle kernel output and chain into the next run via kernel_sources. No Kaggle token is needed inside the notebook.",
+    "stable_kernel_slug": true,
+    "_stable_kernel_note": "Kaggle secrets attach to a NOTEBOOK, in the UI, and kernel-metadata.json has no field for them (ApiSaveKernelRequest carries no secrets). A per-experiment slug therefore creates a fresh notebook every cycle with KAGGLE_KERNEL_INTEGRATIONS empty, and the clone fails. One stable slug is pushed as a new VERSION each time and keeps the attachment, so GITHUB_TOKEN is attached once by hand and the loop then runs unattended. The experiment id travels in the notebook's PARAMS cell.",
+    "_warm_start_note": "Disabled by stable_kernel_slug: a kernel cannot list itself in kernel_sources, so each run starts cold. Restore warm starts by persisting weights to a Kaggle dataset from inside the notebook, which needs a KAGGLE_API_TOKEN secret attached alongside GITHUB_TOKEN in the same one-time UI step."
   },
   "loop": {
     "scout_interval_hours": 24,
