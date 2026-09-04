@@ -23,7 +23,9 @@
     "_artifacts_note": "Weights + processed cache persist as Kaggle kernel output and chain into the next run via kernel_sources. No Kaggle token is needed inside the notebook.",
     "stable_kernel_slug": false,
     "_stable_kernel_note": "False because the repo is PUBLIC and the notebook clones anonymously, so no Kaggle Secret is involved. Set this True only if the repo goes private again: secrets attach to a notebook through the UI and ApiSaveKernelRequest has no field for them, so a per-experiment slug would create a fresh notebook each cycle with KAGGLE_KERNEL_INTEGRATIONS empty and the clone would fail.",
-    "_warm_start_note": "Per-experiment slugs make kernel_sources chaining possible again: each run attaches the previous runner kernel, so weights and the processed cache carry forward as kernel output without ever touching a laptop."
+    "_warm_start_note": "Per-experiment slugs make kernel_sources chaining possible again: each run attaches the previous runner kernel, so weights and the processed cache carry forward as kernel output without ever touching a laptop.",
+    "machine_shape": "NvidiaTeslaT4",
+    "_machine_shape_note": "enable_gpu is DEPRECATED in ApiSaveKernelRequest and leaves the accelerator to Kaggle, which handed us a Tesla P100. P100 is compute capability sm_60, and the Kaggle image's own PyTorch is built for sm_70+ only, so every forward pass died with 'no kernel image is available for execution on the device'. T4 is sm_75. Valid values: NvidiaTeslaT4, NvidiaTeslaP100, Tpu1VmV38."
   },
   "loop": {
     "scout_interval_hours": 24,

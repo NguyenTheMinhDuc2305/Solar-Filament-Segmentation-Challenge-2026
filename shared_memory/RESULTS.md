@@ -28,6 +28,7 @@ _Maintained by the review agent each cycle._
 | cycle | exp | primary variable | CV PQ | LB | member | verdict |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | exp_0 | end-to-end pipeline | null | — | ngtmduc | dev_bug |
+| 0-R4 | exp_0 | (retry) end-to-end pipeline | null | — | ngtmduc | dev_bug |
 
 ## Cycle 0 - exp_0
 _Ran: 2026-09-03T16:25:00Z | member: ngtmduc | kaggle_user: ngtmduc | commit: incomplete_
@@ -125,3 +126,28 @@ The runner_template.py is correct — it tries to fetch the secret via `kaggle_s
 **Slot status**: No slot spent (kernel failed before generating any results).
 
 **Classification**: `dev_bug` — prerequisite for kernel execution is missing. The code, proposal, and pipeline design are all correct; the blocking issue is infrastructure configuration (Kaggle Secrets).
+
+---
+
+### Run 4 (2026-09-04 02:13:58Z)
+_Kernel: https://www.kaggle.com/code/ngtmduc/filament-runner-exp-0 | Commit: ae372af3_
+
+**Implementation status**: ✓ **Complete** — all eight required modules present and pushed (commit ae372af fixes `find_dataset_root` depth robustness).
+
+**Kernel execution**: Failed at ~91s during the first forward pass in training.
+
+**Error** (from kernel logs):
+```
+torch.AcceleratorError: CUDA error: no kernel image is available for execution on the device
+
+Tesla P100-PCIE-16GB with CUDA capability sm_60 is not compatible with the current PyTorch installation.
+The current PyTorch install supports CUDA capabilities sm_70 sm_75 sm_80 sm_86 sm_90 sm_100 sm_120.
+```
+
+**Root cause**: The `requirements-kaggle.txt` pins PyTorch (via `segmentation-models-pytorch` or a direct `torch` dependency) to a binary wheel built for newer GPU compute capabilities (sm_70+). Kaggle assigned a Tesla P100 with compute capability sm_60, which cannot run the kernel.
+
+This is a PyTorch/CUDA version mismatch, not a code or logic problem.
+
+**Slot status**: No slot spent (kernel failed before generating any results).
+
+**Classification**: `dev_bug` — PyTorch binary wheels in `requirements-kaggle.txt` are incompatible with the P100 GPU. The proposal and code are correct; the dependency set needs adjustment to support older GPU architectures (e.g., downgrade to a PyTorch version built for sm_60, or ensure wheels with broad CUDA capability support).

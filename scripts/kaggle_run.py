@@ -144,12 +144,24 @@ def stage_kernel(exp: str, commit: str, ident: dict, warm_from: str = "") -> Pat
         "language": "python",
         "kernel_type": "notebook",
         "is_private": True,
-        "enable_gpu": bool(kcfg["enable_gpu"]),
         "enable_internet": bool(kcfg["enable_internet"]),
         "dataset_sources": [],
         "competition_sources": [CONFIG["competition"]["slug"]],
         "kernel_sources": [],
     }
+    # Pick the accelerator explicitly. `enable_gpu` is deprecated and lets Kaggle
+    # choose, which handed us a Tesla P100: compute capability sm_60, while the
+    # Kaggle image's own PyTorch is built for sm_70+ only, so every forward pass
+    # died with "no kernel image is available for execution on the device". The
+    # failure looks like a dependency problem and is not one - nothing in
+    # requirements-kaggle.txt installs torch.
+    shape = kcfg.get("machine_shape")
+    if shape:
+        meta["machine_shape"] = shape
+        log("accelerator: {}".format(shape))
+    else:
+        meta["enable_gpu"] = bool(kcfg.get("enable_gpu", True))
+
     # Warm start from the previous run's *kernel output*. Kaggle persists whatever
     # a completed kernel leaves in /kaggle/working, so weights and the processed
     # cache chain forward with no dataset to publish and no Kaggle token inside
@@ -165,7 +177,12 @@ def stage_kernel(exp: str, commit: str, ident: dict, warm_from: str = "") -> Pat
 
 
 def latest_runner_kernel(ident: dict, exclude: str = "") -> str:
-    """Most recent completed runner kernel owned by this member, if any."""
+    """Most recent *successful* runner kernel owned by this member, if any.
+
+    Only a completed kernel has usable output. Chaining from one that errored
+    attaches an empty mount, which teaches the next run nothing and makes a cold
+    start look like a warm one in the logs.
+    """
     api = kaggle_api()
     prefix = CONFIG["kaggle"]["kernel_slug_prefix"]
     try:
@@ -176,8 +193,15 @@ def latest_runner_kernel(ident: dict, exclude: str = "") -> str:
         return ""
     for k in kernels:
         ref = str(getattr(k, "ref", "") or "")
-        if ref and prefix in ref and ref != exclude:
-            return ref
+        if not ref or prefix not in ref or ref == exclude:
+            continue
+        try:
+            if _norm_status(getattr(api.kernels_status(ref), "status", "")) != "complete":
+                log("skipping warm start from {} (did not complete)".format(ref))
+                continue
+        except Exception:  # noqa: BLE001 - unknown status is not worth chaining from
+            continue
+        return ref
     return ""
 
 
