@@ -111,10 +111,12 @@ The Kaggle kernel is the deliberate exception: it has no uv and no `.venv`, runs
 the image's own interpreter, and installs from `requirements-kaggle.txt`. The two
 dependency sets stay separate on purpose - `src/run.py` must never assume uv.
 
-`GITHUB_TOKEN` is the **only** Kaggle Secret needed (`notebooks/README.md`): the notebook runs on Kaggle's
-machines and cannot see your `.env`, so it needs that token to clone this private
-repo. Every Kaggle API call - submit, poll, fetch results, forum scouting - runs
-locally with the token in `.env`.
+**No Kaggle Secret is needed.** The repo is public, so the notebook clones
+anonymously. That is deliberate: the Kaggle API cannot attach a Secret to a
+notebook it pushes (`ApiSaveKernelRequest` carries no such field), so a
+token-based clone would need a manual UI step for every notebook ever created -
+which is incompatible with an unattended loop. Every Kaggle API call - submit,
+poll, fetch results, forum scouting - runs locally with the token in `.env`.
 
 ## Compute
 
@@ -143,8 +145,8 @@ push → poll → pull → submit → **wait for the score** in one call.
 4. **Never fabricate a metric.** `"cv_pq": null` plus an `error` explaining why is
    far more useful than a plausible number.
 5. **30% of the grade is not the model**: a 4-page PDF report, a public repo, and
-   modular code are mandatory to be judged at all. The repo is **deliberately
-   private for now**; it must be flipped to public before judging.
+   modular code are mandatory to be judged at all. The repo is **public** as of
+   2026-09-04, which also removes the notebook's need for any Kaggle Secret.
 
 ## Anchors
 

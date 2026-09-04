@@ -16,11 +16,11 @@ Writes  : /kaggle/working/submission.csv          the file that gets submitted
                                                 kernel output and chained into the
                                                 next run via `kernel_sources`
 
-Secrets required on the Kaggle side (Add-ons -> Secrets, attached to the notebook):
-          GITHUB_TOKEN       PAT with repo scope, to clone this private repo.
-                             This is the ONLY secret this notebook needs - every
-                             Kaggle API call (submit, poll, fetch results, forum
-                             scouting) happens locally with the token in .env.
+Secrets: none. The repo is public, so the clone is anonymous. This is deliberate -
+the Kaggle API cannot attach a Secret to a notebook it pushes, so any token-based
+clone would need a manual UI step every time a notebook is created. Every Kaggle
+API call (submit, poll, fetch results, forum scouting) runs locally from .env.
+A GITHUB_TOKEN secret is still honoured as a fallback if the repo is private.
 """
 
 import json
@@ -95,13 +95,40 @@ def get_secret(name, required=True):
 
 
 # --------------------------------------------------------------------- 1. clone
-def clone_repo(params, gh_token):
+def clone_repo(params):
+    """Clone the repo, anonymously when it is public.
+
+    The repo is public, so no credential is needed and none is requested - which
+    matters because the Kaggle API cannot attach a Secret to a notebook it
+    pushes (`ApiSaveKernelRequest` has no field for one), so a token-based clone
+    can never be fully automated. A public repo removes the problem rather than
+    working around it.
+
+    The token path is kept only as a fallback for a repo that is still private,
+    and it is tried second so that the normal case needs no secret at all.
+    """
     if REPO_DIR.exists():
         shutil.rmtree(REPO_DIR)
-    url = "https://{}@github.com/{}/{}.git".format(
-        gh_token, params["repo_owner"], params["repo_name"])
-    sh("git clone --quiet --branch {} {} {}".format(params["branch"], url, REPO_DIR),
-       secret=gh_token)
+    public = "https://github.com/{}/{}.git".format(params["repo_owner"], params["repo_name"])
+
+    rc, _ = sh("git clone --quiet --branch {} {} {}".format(
+        params["branch"], public, REPO_DIR), check=False)
+
+    if rc != 0:
+        log("anonymous clone failed - falling back to a token (repo still private?)")
+        token = get_secret("GITHUB_TOKEN", required=False)
+        if not token:
+            raise RuntimeError(
+                "Could not clone {}/{} anonymously and no GITHUB_TOKEN secret is "
+                "attached to this notebook. Either make the repo public (the "
+                "intended setup, and required before judging anyway) or attach the "
+                "secret to this notebook in the Kaggle UI.".format(
+                    params["repo_owner"], params["repo_name"]))
+        authed = "https://{}@github.com/{}/{}.git".format(
+            token, params["repo_owner"], params["repo_name"])
+        sh("git clone --quiet --branch {} {} {}".format(params["branch"], authed, REPO_DIR),
+           secret=token)
+
     if params.get("commit"):
         sh("git checkout --quiet {}".format(params["commit"]), cwd=str(REPO_DIR))
     _, head = sh("git log -1 --oneline", cwd=str(REPO_DIR))
@@ -235,8 +262,7 @@ def main():
     status = "complete"
     error = None
     try:
-        gh = get_secret("GITHUB_TOKEN")
-        clone_repo(params, gh)
+        clone_repo(params)
         install_requirements()
         run_experiment(params)
         verify_outputs(params)

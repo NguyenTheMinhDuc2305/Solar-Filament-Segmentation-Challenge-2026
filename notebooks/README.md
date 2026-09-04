@@ -21,30 +21,28 @@ push kernel ──> clone repo @ <sha> ──> pip install ──> python -m src
 
 ## One-time setup per team member
 
-Each member trains on their **own** Kaggle account, so each does this once:
+The repo is **public**, so the notebook clones anonymously and **no Kaggle Secret
+is required**. This is not a convenience - the Kaggle API has no field for
+attaching a secret to a notebook it pushes, so any token-based clone needs a
+manual UI step on every newly created notebook, which an unattended loop cannot
+do. A public repo removes the problem instead of working around it.
 
-1. **Kaggle Secrets** - open any notebook, `Add-ons -> Secrets`, and add:
-   | Secret name | Value |
-   | --- | --- |
-   | `GITHUB_TOKEN` | your GitHub PAT with `repo` scope - lets the kernel clone this repo |
+Each member only needs their own `.env`:
 
-   Attach it to the notebook the first time it runs (Kaggle asks).
-
-   **This is the only secret the notebook needs.** It runs on Kaggle's machines,
-   which cannot see your local `.env`, and the repo is private - hence the token.
-   No Kaggle token goes in here: every Kaggle API call (submit, poll for the score,
-   fetch results, forum scouting) happens locally with the token in `.env`.
-
-2. **Local `.env`** - copy `.env.example` to `.env` and fill in the same two
-   tokens. `.env` is gitignored; it is the only place your identity lives.
-
-3. Verify: `python scripts/env_setup.py` should print your Kaggle username.
+1. Copy `.env.example` to `.env` and fill in `KAGGLE_API_TOKEN` (and
+   `GITHUB_TOKEN` for pushing code from your machine). `.env` is gitignored; it
+   is the only place your identity lives.
+2. Verify: `uv run python scripts/env_setup.py` should print your Kaggle username.
 
 Kernel slugs (`filament-runner-<exp>`) are namespaced under whoever runs them, so
 two members can run the same experiment without colliding. Weights and the
 processed cache persist as **kernel output** and chain into the next run via
-`kernel_sources` - nothing is published as a dataset and nothing needs a token. Only `shared_memory/` is
-shared, through git.
+`kernel_sources`.
+
+If the repo is ever made private again, the notebook falls back to a
+`GITHUB_TOKEN` Kaggle Secret - which then has to be attached by hand, per
+notebook, and `stable_kernel_slug` in `orchestrator/config.json` must be set to
+`true` so there is only one notebook to attach it to.
 
 ## What `src/run.py` must honour
 
